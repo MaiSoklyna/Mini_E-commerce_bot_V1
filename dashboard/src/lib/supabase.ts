@@ -1,13 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Point Supabase JS client at the FastAPI proxy instead of Supabase directly.
-// FastAPI verifies the admin JWT locally, then forwards queries to Supabase
-// using the service_role key — bypassing JWT secret mismatch issues.
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const proxyUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-export const supabase = createClient(proxyUrl, supabaseAnonKey, {
+if (!supabaseAnonKey && typeof window !== 'undefined') {
+  console.error('NEXT_PUBLIC_SUPABASE_ANON_KEY is not set!')
+}
+
+// Point Supabase JS client at the FastAPI proxy instead of Supabase directly.
+export const supabase = createClient(proxyUrl, supabaseAnonKey || 'placeholder', {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
