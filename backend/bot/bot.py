@@ -1,7 +1,6 @@
 import logging
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
 from app.config import settings
-from app.database import init_db_pool
 
 from bot.handlers.start import start_command, main_menu_callback
 from bot.handlers.browse import browse_shops, view_shop, view_category_products, view_all_products, view_product
@@ -67,10 +66,9 @@ def create_bot_app():
 
 def run_bot():
     """Run the bot with polling (for development)."""
-    logger.info("🤖 Starting Favourite of Shop Bot...")
-    init_db_pool()
+    logger.info("Starting Favourite of Shop Bot...")
     app = create_bot_app()
-    logger.info("✅ Bot is running! Press Ctrl+C to stop.")
+    logger.info("Bot is running! Press Ctrl+C to stop.")
     app.run_polling(drop_pending_updates=True)
 
 

@@ -10,7 +10,12 @@ miniapp/dist/
 
 # Environment
 .env
+.env.local
 backend/.env
+dashboard/.env.local
+
+# Vercel
+.vercel/
 
 # IDE
 .vscode/
@@ -27,6 +32,9 @@ backend/uploads/
 # Claude
 .claude/
 .agents/
+
+# Supabase temp
+supabase/.temp/
 
 # Misc
 skills-lock.json

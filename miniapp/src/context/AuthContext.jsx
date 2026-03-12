@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
-import api from '../api/axios'
+import * as authService from '../services/authService'
+import { setSupabaseToken, clearSupabaseToken } from '../lib/supabase'
 
 const AuthContext = createContext(null)
-const BOT_USERNAME = 'FavouriteOfShop_bot'
+const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'FavouriteOfShop_bot'
 const POLL_INTERVAL = 2000 // 2 seconds
 const POLL_TIMEOUT = 5 * 60 * 1000 // 5 minutes
 
@@ -33,27 +34,31 @@ export function AuthProvider({ children }) {
 
       if (urlToken) {
         localStorage.setItem('token', urlToken)
+        setSupabaseToken(urlToken)
         window.history.replaceState({}, '', window.location.pathname)
         try {
-          const res = await api.get('/auth/me')
-          setUser(res.data)
+          const userData = await authService.getMe(urlToken)
+          setUser(userData)
           return
         } catch (e) {
           console.error('Token from URL failed:', e)
           localStorage.removeItem('token')
+          clearSupabaseToken()
         }
       }
 
       // STEP 2: Check existing token in localStorage
       const savedToken = localStorage.getItem('token')
       if (savedToken) {
+        setSupabaseToken(savedToken)
         try {
-          const res = await api.get('/auth/me')
-          setUser(res.data)
+          const userData = await authService.getMe(savedToken)
+          setUser(userData)
           return
         } catch (e) {
           console.error('Saved token failed:', e)
           localStorage.removeItem('token')
+          clearSupabaseToken()
         }
       }
 
@@ -61,14 +66,15 @@ export function AuthProvider({ children }) {
       const tg = window.Telegram?.WebApp
       if (tg?.initDataUnsafe?.user) {
         const u = tg.initDataUnsafe.user
-        const res = await api.post('/auth/telegram', {
+        const res = await authService.telegramAuth({
           telegram_id: u.id,
           username: u.username || `user_${u.id}`,
           first_name: u.first_name || '',
           last_name: u.last_name || '',
         })
-        localStorage.setItem('token', res.data.access_token)
-        setUser(res.data.user)
+        localStorage.setItem('token', res.access_token)
+        setSupabaseToken(res.access_token)
+        setUser(res.user)
         tg.ready()
         tg.expand()
         return
@@ -78,6 +84,7 @@ export function AuthProvider({ children }) {
     } catch (err) {
       console.error('Auth error:', err)
       localStorage.removeItem('token')
+      clearSupabaseToken()
     } finally {
       setLoading(false)
     }
@@ -94,8 +101,8 @@ export function AuthProvider({ children }) {
       setLoginPending(true)
 
       // 1. Create a pending session on the server
-      const res = await api.post('/auth/sessions')
-      const sessionId = res.data.session_id
+      const res = await authService.createLoginSession()
+      const sessionId = res.session_id
 
       // 2. Open Telegram bot with deep-link
       window.open(`https://t.me/${BOT_USERNAME}?start=${sessionId}`, '_blank')
@@ -103,12 +110,13 @@ export function AuthProvider({ children }) {
       // 3. Start polling for completion
       pollRef.current = setInterval(async () => {
         try {
-          const poll = await api.get(`/auth/sessions/${sessionId}`)
-          if (poll.data.status === 'completed') {
+          const poll = await authService.pollLoginSession(sessionId)
+          if (poll.status === 'completed') {
             stopPolling()
-            localStorage.setItem('token', poll.data.token)
-            setUser(poll.data.user)
-          } else if (poll.data.status === 'expired') {
+            localStorage.setItem('token', poll.token)
+            setSupabaseToken(poll.token)
+            setUser(poll.user)
+          } else if (poll.status === 'expired') {
             stopPolling()
           }
         } catch {
@@ -130,6 +138,7 @@ export function AuthProvider({ children }) {
   function logout() {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    clearSupabaseToken()
     setUser(null)
   }
 

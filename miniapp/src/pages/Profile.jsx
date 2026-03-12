@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import EmptyState from '../components/EmptyState';
-import api from '../api/axios';
+import * as authService from '../services/authService';
+import * as notificationService from '../services/notificationService';
 
 const MENU_ITEMS = [
   {
@@ -65,8 +66,8 @@ export default function Profile() {
 
   useEffect(() => {
     if (user) {
-      api.get('/notifications?limit=100')
-        .then(res => setNotificationCount((res.data.data || []).filter(n => !n.is_read).length))
+      notificationService.getNotifications(100)
+        .then(data => setNotificationCount(data.filter(n => !n.is_read).length))
         .catch(() => {});
     }
   }, [user]);
@@ -74,8 +75,9 @@ export default function Profile() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await api.put('/auth/me', formData);
-      setUser(res.data.data || res.data);
+      const token = localStorage.getItem('token');
+      const data = await authService.updateProfile(token, formData);
+      setUser(data);
       setEditing(false);
       alert('Profile updated successfully!');
     } catch (err) {

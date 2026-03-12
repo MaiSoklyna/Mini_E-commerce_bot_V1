@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import api from "@/lib/api";
+import * as orderService from "@/services/orderService";
 import { Order, Pagination } from "@/types";
 
 const statusColors: Record<string, string> = {
@@ -25,9 +25,9 @@ export default function OrdersPage() {
   const load = async (page = 1) => {
     setLoading(true);
     try {
-      const res = await api.get("/admin/orders", { params: { page, limit: 20, search, status: tab === "all" ? undefined : tab } });
-      setOrders(res.data.data || []);
-      setPagination(res.data.meta || { page, limit: 20, total: 0, total_pages: 0 });
+      const res = await orderService.listOrders({ page, limit: 20, search, status: tab === "all" ? undefined : tab });
+      setOrders(res.data || []);
+      setPagination(res.meta || { page, limit: 20, total: 0, total_pages: 0 });
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -38,14 +38,14 @@ export default function OrdersPage() {
   const openDetail = async (id: number) => {
     setDetailLoading(true);
     try {
-      const res = await api.get(`/admin/orders/${id}`);
-      setDetail(res.data.data);
+      const data = await orderService.getOrder(id);
+      setDetail(data);
     } catch (e) { console.error(e); }
     setDetailLoading(false);
   };
 
   const updateStatus = async (id: number, status: string) => {
-    await api.patch(`/admin/orders/${id}/status`, { status });
+    await orderService.updateOrderStatus(id, status);
     if (detail?.id === id) openDetail(id);
     load(pagination.page);
   };

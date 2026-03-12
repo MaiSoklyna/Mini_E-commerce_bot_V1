@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from app.database import execute_query
+from bot.supabase_helpers import sb_get, sb_get_one
 from bot.keyboards.inline import (
     merchant_list_keyboard, category_keyboard, product_list_keyboard,
     product_detail_keyboard, back_to_menu_keyboard
@@ -15,22 +15,22 @@ async def browse_shops(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    merchants = execute_query(
-        """SELECT m.*,
-                  (SELECT COUNT(*) FROM products p WHERE p.merchant_id = m.id AND p.is_active = TRUE) as product_count
-           FROM merchants m WHERE m.status = 'active' ORDER BY m.name""",
-        fetch_all=True
-    )
+    merchants = sb_get("merchants", "select=*&status=eq.active&order=name")
+
+    # Enrich with product counts
+    for m in merchants:
+        products = sb_get("products", f"select=id&merchant_id=eq.{m['id']}&is_active=eq.true")
+        m["product_count"] = len(products)
 
     if not merchants:
         await query.edit_message_text(
-            "😔 No shops available right now. Check back later!",
+            "No shops available right now. Check back later!",
             reply_markup=back_to_menu_keyboard()
         )
         return
 
     await query.edit_message_text(
-        "🏪 **Available Shops**\nSelect a shop to browse products:",
+        "**Available Shops**\nSelect a shop to browse products:",
         parse_mode="Markdown",
         reply_markup=merchant_list_keyboard(merchants)
     )
@@ -43,24 +43,21 @@ async def view_shop(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     merchant_id = int(query.data.split("_")[1])
 
-    merchant = execute_query(
-        "SELECT * FROM merchants WHERE id = %s", (merchant_id,), fetch_one=True
-    )
+    merchant = sb_get_one("merchants", f"select=*&id=eq.{merchant_id}")
     if not merchant:
         await query.edit_message_text("Shop not found.", reply_markup=back_to_menu_keyboard())
         return
 
-    # Get categories that have products for this merchant
-    categories = execute_query(
-        """SELECT DISTINCT c.id, c.name, c.icon_emoji
-           FROM categories c
-           JOIN products p ON c.id = p.category_id
-           WHERE p.merchant_id = %s AND p.is_active = TRUE
-           ORDER BY c.name""",
-        (merchant_id,), fetch_all=True
-    )
+    # Get products for this merchant to find categories with products
+    products = sb_get("products", f"select=category_id&merchant_id=eq.{merchant_id}&is_active=eq.true")
+    cat_ids = list(set(p["category_id"] for p in products if p.get("category_id")))
 
-    text = f"🏪 **{merchant['name']}**\n"
+    categories = []
+    if cat_ids:
+        ids_str = ",".join(str(c) for c in cat_ids)
+        categories = sb_get("categories", f"select=id,name,icon_emoji&id=in.({ids_str})&order=name")
+
+    text = f"**{merchant['name']}**\n"
     if merchant.get("description"):
         text += f"_{merchant['description']}_\n"
     text += "\nSelect a category or view all products:"
@@ -81,11 +78,9 @@ async def view_category_products(update: Update, context: ContextTypes.DEFAULT_T
     merchant_id = int(parts[1])
     category_id = int(parts[2])
 
-    products = execute_query(
-        """SELECT * FROM products
-           WHERE merchant_id = %s AND category_id = %s AND is_active = TRUE
-           ORDER BY name""",
-        (merchant_id, category_id), fetch_all=True
+    products = sb_get(
+        "products",
+        f"select=*&merchant_id=eq.{merchant_id}&category_id=eq.{category_id}&is_active=eq.true&order=name"
     )
 
     if not products:
@@ -95,14 +90,11 @@ async def view_category_products(update: Update, context: ContextTypes.DEFAULT_T
         )
         return
 
-    category = execute_query(
-        "SELECT name FROM categories WHERE id = %s",
-        (category_id,), fetch_one=True
-    )
+    category = sb_get_one("categories", f"select=name&id=eq.{category_id}")
     cat_name = category["name"] if category else "Products"
 
     await query.edit_message_text(
-        f"📂 **{cat_name}**\nSelect a product for details:",
+        f"**{cat_name}**\nSelect a product for details:",
         parse_mode="Markdown",
         reply_markup=product_list_keyboard(products, merchant_id)
     )
@@ -115,11 +107,9 @@ async def view_all_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     merchant_id = int(query.data.split("_")[1])
 
-    products = execute_query(
-        """SELECT * FROM products
-           WHERE merchant_id = %s AND is_active = TRUE
-           ORDER BY name""",
-        (merchant_id,), fetch_all=True
+    products = sb_get(
+        "products",
+        f"select=*&merchant_id=eq.{merchant_id}&is_active=eq.true&order=name"
     )
 
     if not products:
@@ -130,7 +120,7 @@ async def view_all_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await query.edit_message_text(
-        "📋 **All Products**\nSelect a product for details:",
+        "**All Products**\nSelect a product for details:",
         parse_mode="Markdown",
         reply_markup=product_list_keyboard(products, merchant_id)
     )
@@ -143,34 +133,31 @@ async def view_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     product_id = int(query.data.split("_")[1])
 
-    product = execute_query(
-        """SELECT p.*, m.name as merchant_name
-           FROM products p
-           JOIN merchants m ON p.merchant_id = m.id
-           WHERE p.id = %s""",
-        (product_id,), fetch_one=True
-    )
-
+    product = sb_get_one("products", f"select=*&id=eq.{product_id}")
     if not product:
         await query.edit_message_text("Product not found.", reply_markup=back_to_menu_keyboard())
         return
 
-    # Store current quantity in user data
+    merchant = sb_get_one("merchants", f"select=name&id=eq.{product['merchant_id']}")
+    merchant_name = merchant["name"] if merchant else "Unknown"
+
     context.user_data[f"qty_{product_id}"] = 1
 
-    stock_text = f"✅ In Stock ({product['stock']})" if product["stock"] > 0 else "❌ Out of Stock"
-    rating_text = f"⭐ {product['rating_avg']:.1f}/5 ({product['review_count']} reviews)" if product["review_count"] > 0 else "No reviews yet"
+    stock_text = f"In Stock ({product['stock']})" if product["stock"] > 0 else "Out of Stock"
+    rating_avg = product.get("rating_avg") or 0
+    review_count = product.get("review_count") or 0
+    rating_text = f"{rating_avg:.1f}/5 ({review_count} reviews)" if review_count > 0 else "No reviews yet"
 
     text = (
-        f"🛍️ **{product['name']}**\n"
-        f"🏪 {product['merchant_name']}\n\n"
-        f"💰 **${product['base_price']:.2f}**\n"
-        f"📦 {stock_text}\n"
-        f"🚚 Delivery: ~{product['delivery_days']} days\n"
+        f"**{product['name']}**\n"
+        f"{merchant_name}\n\n"
+        f"**${float(product['base_price']):.2f}**\n"
+        f"{stock_text}\n"
+        f"Delivery: ~{product.get('delivery_days', 'N/A')} days\n"
         f"{rating_text}\n"
     )
     if product.get("description"):
-        text += f"\n📝 {product['description']}"
+        text += f"\n{product['description']}"
 
     await query.edit_message_text(
         text,

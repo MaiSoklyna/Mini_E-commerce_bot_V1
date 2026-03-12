@@ -4,7 +4,7 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import EmptyState from '../components/EmptyState';
-import api from '../api/axios';
+import * as cartService from '../services/cartService';
 
 export default function Cart() {
   const navigate = useNavigate();
@@ -43,16 +43,17 @@ export default function Cart() {
       'PROMO_MIN_ORDER': 'Minimum order amount not met',
     };
 
+    const token = localStorage.getItem('token');
     let lastError = 'Invalid promo code';
     for (const merchantId of merchantIds) {
       const merchantTotal = items
         .filter(i => i.merchant_id === merchantId)
         .reduce((sum, i) => sum + parseFloat(i.line_total || i.unit_price * i.quantity), 0);
       try {
-        const res = await api.post('/cart/validate-promo', {
+        const res = await cartService.validatePromo(token, {
           code: promoCode, merchant_id: merchantId, cart_total: merchantTotal,
         });
-        const discountAmount = parseFloat(res.data.data?.discount_amount || 0);
+        const discountAmount = parseFloat(res.data?.discount_amount || 0);
         setDiscount(discountAmount);
         setPromoSuccess(true);
         setPromoError('');

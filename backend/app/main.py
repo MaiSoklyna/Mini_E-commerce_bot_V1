@@ -4,22 +4,21 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from app.config import settings
-from app.database import init_db_pool
-from app.routes import auth, products, categories, cart, orders, merchants, admin, reviews, notifications, support
+from app.routes import telegram_auth, admin_link, admin_auth, db_proxy, miniapp_api
 import logging, os
+
 
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL, logging.INFO))
 logger = logging.getLogger(__name__)
 
-ALLOWED_ORIGINS = [
+_DEFAULT_DEV_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:3000",
     "http://localhost:3001",
-    # Network access (phone/other devices on same WiFi)
-    "http://192.168.0.240:5173",
-    "http://192.168.0.240:5174",
 ]
+
+ALLOWED_ORIGINS = settings.CORS_ORIGINS if settings.CORS_ORIGINS else _DEFAULT_DEV_ORIGINS
 
 # Ensure upload directories exist
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
@@ -29,11 +28,6 @@ os.makedirs(os.path.join(UPLOAD_DIR, "images"), exist_ok=True)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Favourite of Shop API...")
-    success = init_db_pool()
-    if success:
-        logger.info("Database connected successfully")
-    else:
-        logger.error("Database connection failed!")
     yield
     logger.info("Shutting down API...")
 
@@ -67,24 +61,24 @@ async def global_exception_handler(request: Request, exc: Exception):
             "Access-Control-Allow-Origin": origin,
             "Access-Control-Allow-Credentials": "true",
         }
+    detail = str(exc) if settings.DEBUG else "Internal server error"
     return JSONResponse(
         status_code=500,
-        content={"detail": str(exc)},
+        content={"detail": detail},
         headers=headers,
     )
 
 
-# Register Routes
-app.include_router(auth.router, prefix="/api")
-app.include_router(products.router, prefix="/api")
-app.include_router(categories.router, prefix="/api")
-app.include_router(cart.router, prefix="/api")
-app.include_router(orders.router, prefix="/api")
-app.include_router(merchants.router, prefix="/api")
-app.include_router(admin.router, prefix="/api")
-app.include_router(reviews.router, prefix="/api")
-app.include_router(notifications.router, prefix="/api")
-app.include_router(support.router, prefix="/api")
+# Register Routes (only Supabase-backed routes remain)
+app.include_router(telegram_auth.router, prefix="/api")
+app.include_router(admin_link.router, prefix="/api")
+app.include_router(admin_auth.router, prefix="/api")
+
+# Miniapp API (replaces Supabase Edge Functions)
+app.include_router(miniapp_api.router)
+
+# PostgREST + Storage proxy (must be BEFORE static files mount)
+app.include_router(db_proxy.router)
 
 # Serve uploaded images at /uploads/images/filename.jpg
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
@@ -102,15 +96,8 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    from app.database import execute_query
-    try:
-        result = execute_query("SELECT 1 as ok", fetch_one=True)
-        db_status = "connected" if result else "disconnected"
-    except Exception:
-        db_status = "disconnected"
-
     return {
         "status": "healthy",
-        "database": db_status,
+        "database": "supabase",
         "environment": settings.ENVIRONMENT,
     }

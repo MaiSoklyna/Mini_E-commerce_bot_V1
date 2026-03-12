@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import api from "@/lib/api";
+import * as analyticsService from "@/services/analyticsService";
 import { MdAttachMoney, MdShoppingCart, MdPeople, MdTrendingUp, MdTrendingDown } from "react-icons/md";
 import {
   LineChart,
@@ -91,23 +91,23 @@ export default function AnalyticsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const params = period === "custom" && customRange.start && customRange.end
-        ? { start: customRange.start, end: customRange.end }
+      const params: any = period === "custom" && customRange.start && customRange.end
+        ? { start: customRange.start, end: customRange.end, period: "custom" }
         : { period };
 
-      const [kpiRes, revenueRes, statusRes, productsRes, merchantsRes] = await Promise.all([
-        api.get("/admin/analytics/kpi", { params }).catch(() => ({ data: { data: {} } })),
-        api.get("/admin/analytics/revenue", { params }),
-        api.get("/admin/analytics/orders-status", { params }).catch(() => ({ data: { data: [] } })),
-        api.get("/admin/analytics/top-products", { params: { ...params, limit: 10 } }),
-        api.get("/admin/analytics/top-merchants", { params: { ...params, limit: 10 } }).catch(() => ({ data: { data: [] } })),
+      const [kpiData, revenueData, statusData, productsData, merchantsData] = await Promise.all([
+        analyticsService.getKPI(params).catch(() => ({})),
+        analyticsService.getRevenue(params).catch(() => []),
+        analyticsService.getOrderStatus(params).catch(() => []),
+        analyticsService.getTopProducts({ ...params, limit: 10 }).catch(() => []),
+        analyticsService.getTopMerchants({ ...params, limit: 10 }).catch(() => []),
       ]);
 
-      setKpiData(kpiRes.data.data || kpiRes.data || {});
-      setRevenueData(revenueRes.data.data || []);
-      setOrderStatusData(statusRes.data.data || []);
-      setTopProducts(productsRes.data.data || []);
-      setTopMerchants(merchantsRes.data.data || []);
+      setKpiData(kpiData as any || {});
+      setRevenueData(revenueData || []);
+      setOrderStatusData(statusData || []);
+      setTopProducts(productsData || []);
+      setTopMerchants(merchantsData || []);
     } catch (e) {
       console.error(e);
     }
@@ -341,7 +341,7 @@ export default function AnalyticsPage() {
                       innerRadius={60}
                       outerRadius={90}
                       dataKey="count"
-                      label={(entry) => `${entry.status}: ${entry.count}`}
+                      label={(entry: any) => `${entry.status}: ${entry.count}`}
                       labelLine={false}
                     >
                       {orderStatusData.map((entry, index) => (

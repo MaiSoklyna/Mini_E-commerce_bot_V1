@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { AdminUser } from "@/types";
+import { setAdminToken, clearAdminToken } from "@/lib/supabase";
 import {
   MdDashboard,
   MdShoppingCart,
@@ -44,16 +45,39 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
   useEffect(() => {
     const token = localStorage.getItem("admin_token");
-    const data = localStorage.getItem("admin_user");
-    if (!token || !data) {
+    if (!token) {
       router.replace("/login");
       return;
     }
+    setAdminToken(token);
+
+    // Try localStorage first, fall back to decoding JWT payload
+    const data = localStorage.getItem("admin_user");
+    let parsed: AdminUser | null = null;
     try {
-      setUser(JSON.parse(data));
-    } catch {
-      router.replace("/login");
+      parsed = data ? JSON.parse(data) : null;
+    } catch { /* ignore */ }
+
+    if (!parsed || !parsed.role) {
+      // Decode JWT payload (base64url) to recover user info
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+        parsed = {
+          id: Number(payload.sub),
+          email: payload.email || "",
+          name: payload.name || payload.email?.split("@")[0] || "Admin",
+          role: (payload.app_role || payload.role) === "super_admin" ? "super_admin" : "merchant",
+          merchant_id: payload.merchant_id || null,
+          merchant_name: payload.merchant_name || undefined,
+        };
+        localStorage.setItem("admin_user", JSON.stringify(parsed));
+      } catch {
+        router.replace("/login");
+        return;
+      }
     }
+
+    setUser(parsed);
     setDark(document.documentElement.getAttribute("data-theme") === "dark");
   }, []);
 
@@ -65,6 +89,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   };
 
   const logout = () => {
+    clearAdminToken();
     localStorage.removeItem("admin_token");
     localStorage.removeItem("admin_user");
     router.replace("/login");

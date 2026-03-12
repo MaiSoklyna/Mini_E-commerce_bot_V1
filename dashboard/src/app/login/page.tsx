@@ -1,9 +1,10 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import api from "@/lib/api";
+import { adminLogin, createTgSession, pollTgSession } from "@/services/authService";
+import { setAdminToken } from "@/lib/supabase";
 
-const BOT_USERNAME = "FavouriteOfShop_bot";
+const BOT_USERNAME = process.env.NEXT_PUBLIC_BOT_USERNAME || "FavouriteOfShop_bot";
 const POLL_INTERVAL = 2000;
 const POLL_TIMEOUT = 5 * 60 * 1000;
 
@@ -34,15 +35,16 @@ export default function LoginPage() {
     if (!email || !password) { setError("Please enter email and password"); return; }
     setLoading(true); setError("");
     try {
-      const res = await api.post("/admin/auth/login", { email, password, role });
-      if (res.data.success) {
-        const { access_token, user } = res.data.data;
+      const data = await adminLogin(email, password, role);
+      if (data.success) {
+        const { access_token, user } = data.data;
         localStorage.setItem("admin_token", access_token);
         localStorage.setItem("admin_user", JSON.stringify(user));
+        setAdminToken(access_token);
         router.push("/dashboard");
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Invalid email or password");
+      setError(err.response?.data?.detail || err.message || "Invalid email or password");
     } finally { setLoading(false); }
   };
 
@@ -56,20 +58,21 @@ export default function LoginPage() {
     try {
       setTelegramPending(true);
       setError("");
-      const res = await api.post("/admin/auth/tg-session");
-      const sessionId = res.data.session_id;
+      const data = await createTgSession();
+      const sessionId = data.session_id;
 
       window.open(`https://t.me/${BOT_USERNAME}?start=${sessionId}`, "_blank");
 
       pollRef.current = setInterval(async () => {
         try {
-          const poll = await api.get(`/admin/auth/tg-session/${sessionId}`);
-          if (poll.data.status === "completed") {
+          const poll = await pollTgSession(sessionId);
+          if (poll.status === "completed") {
             stopPolling();
-            localStorage.setItem("admin_token", poll.data.token);
-            localStorage.setItem("admin_user", JSON.stringify(poll.data.user));
+            localStorage.setItem("admin_token", poll.token);
+            localStorage.setItem("admin_user", JSON.stringify(poll.user));
+            setAdminToken(poll.token);
             router.push("/dashboard");
-          } else if (poll.data.status === "expired") {
+          } else if (poll.status === "expired") {
             stopPolling();
             setError("Login session expired. Please try again.");
           }

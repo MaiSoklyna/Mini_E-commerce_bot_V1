@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../api/axios';
+import * as productService from '../services/productService';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import EmptyState from '../components/EmptyState';
@@ -27,8 +27,8 @@ export default function ProductDetail() {
   }, [id]);
 
   useEffect(() => {
-    api.get(`/products/${id}`)
-      .then(res => { setProduct(res.data.data); setLoading(false); })
+    productService.getProduct(id)
+      .then(data => { setProduct(data); setLoading(false); })
       .catch(() => { setError(true); setLoading(false); });
   }, [id]);
 

@@ -1,6 +1,9 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import api from "@/lib/api";
+import * as productService from "@/services/productService";
+import * as categoryService from "@/services/categoryService";
+import * as merchantService from "@/services/merchantService";
+import { getDashboardStats } from "@/services/dashboardService";
 import { Product, Category, Merchant, Pagination, Stats } from "@/types";
 
 interface ProductStats {
@@ -55,8 +58,8 @@ export default function ProductsPage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const user = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("admin_user") || "{}") : {};
-  const isSuper = user.role === "super_admin";
+  const user = typeof window !== "undefined" ? (JSON.parse(localStorage.getItem("admin_user") || "{}") ?? {}) : {};
+  const isSuper = user?.role === "super_admin";
 
   // Load data
   const load = async (page = 1) => {
@@ -67,20 +70,19 @@ export default function ProductsPage() {
       if (filterCat) params.category_id = filterCat;
       if (filterStatus) params.status = filterStatus;
 
-      const [pRes, cRes, mRes, dashRes] = await Promise.all([
-        api.get("/admin/products", { params }),
-        api.get("/admin/categories"),
-        isSuper ? api.get("/admin/merchants", { params: { limit: 100 } }) : Promise.resolve({ data: { data: [] } }),
-        api.get("/admin/dashboard"),
+      const [pRes, cats, mercs] = await Promise.all([
+        productService.listProducts(params),
+        categoryService.listCategories(),
+        isSuper ? merchantService.listMerchants({ limit: 100 }) : Promise.resolve([]),
       ]);
 
-      setProducts(pRes.data.data || []);
-      setPagination(pRes.data.meta || { page, limit: 20, total: 0, total_pages: 0 });
-      setCategories(cRes.data.data || []);
-      setMerchants(mRes.data.data || []);
+      setProducts(pRes.data || []);
+      setPagination(pRes.meta || { page, limit: 20, total: 0, total_pages: 0 });
+      setCategories(cats || []);
+      setMerchants(mercs || []);
 
       // Calculate stats
-      const allProducts = pRes.data.data || [];
+      const allProducts = pRes.data || [];
       setStats({
         total: allProducts.length,
         active: allProducts.filter((p: Product) => p.is_active).length,
@@ -156,7 +158,7 @@ export default function ProductsPage() {
       is_active: p.is_active,
       is_featured: p.is_featured || false,
     });
-    setPreviewUrls(p.primary_image ? [`http://localhost:8000${p.primary_image}`] : []);
+    setPreviewUrls(p.primary_image ? [p.primary_image] : []);
     setSelectedFiles([]);
     setModal(true);
   };
@@ -205,11 +207,7 @@ export default function ProductsPage() {
     setUploading(true);
     try {
       for (const file of selectedFiles) {
-        const fd = new FormData();
-        fd.append("file", file);
-        await api.post(`/admin/products/${productId}/images`, fd, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
+        await productService.uploadProductImage(productId, file);
       }
     } catch (err: any) {
       showToast("Image upload failed", "error");
@@ -238,12 +236,12 @@ export default function ProductsPage() {
       };
 
       if (editId) {
-        await api.put(`/admin/products/${editId}`, payload);
+        await productService.updateProduct(editId, payload);
         if (selectedFiles.length > 0) await uploadImages(editId);
         showToast("Product updated successfully", "success");
       } else {
-        const res = await api.post("/admin/products", payload);
-        const newId = res.data.data?.id;
+        const product = await productService.createProduct(payload);
+        const newId = product?.id;
         if (newId && selectedFiles.length > 0) await uploadImages(newId);
         showToast("Product created successfully", "success");
       }
@@ -262,7 +260,7 @@ export default function ProductsPage() {
 
     setDeleting(true);
     try {
-      await api.delete(`/admin/products/${deleteTarget.id}`);
+      await productService.deleteProduct(deleteTarget.id);
       showToast("Product deleted successfully", "success");
       setDeleteModal(false);
       setDeleteTarget(null);
@@ -276,7 +274,7 @@ export default function ProductsPage() {
   // Toggle active/featured
   const toggleActive = async (product: Product) => {
     try {
-      await api.patch(`/admin/products/${product.id}`, { is_active: !product.is_active });
+      await productService.patchProduct(product.id, { is_active: !product.is_active });
       showToast(`Product ${!product.is_active ? 'activated' : 'deactivated'}`, "success");
       load(pagination.page);
     } catch (e) {
@@ -286,7 +284,7 @@ export default function ProductsPage() {
 
   const toggleFeatured = async (product: Product) => {
     try {
-      await api.patch(`/admin/products/${product.id}`, { is_featured: !product.is_featured });
+      await productService.patchProduct(product.id, { is_featured: !product.is_featured });
       showToast(`Product ${!product.is_featured ? 'featured' : 'unfeatured'}`, "success");
       load(pagination.page);
     } catch (e) {
@@ -482,7 +480,7 @@ export default function ProductsPage() {
                       <td>
                         {p.primary_image ? (
                           <img
-                            src={`http://localhost:8000${p.primary_image}`}
+                            src={p.primary_image}
                             alt={p.name}
                             style={{
                               width: 48,

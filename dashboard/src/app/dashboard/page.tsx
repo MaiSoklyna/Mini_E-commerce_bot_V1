@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import api from "@/lib/api";
+import { getDashboardStats } from "@/services/dashboardService";
 import { AdminUser } from "@/types";
 import {
   MdStore, MdInventory2, MdShoppingCart, MdAttachMoney,
@@ -31,10 +31,33 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const d = localStorage.getItem("admin_user");
-    if (d) setUser(JSON.parse(d));
-    api.get("/admin/dashboard")
-      .then((r) => setStats(r.data.data || r.data))
+    let parsedUser: AdminUser | null = null;
+    try {
+      const d = localStorage.getItem("admin_user");
+      parsedUser = d ? JSON.parse(d) : null;
+    } catch { /* ignore */ }
+
+    // Fall back to decoding JWT if admin_user is missing
+    if (!parsedUser || !parsedUser.role) {
+      try {
+        const token = localStorage.getItem("admin_token");
+        if (token) {
+          const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+          parsedUser = {
+            id: Number(payload.sub),
+            email: payload.email || "",
+            name: payload.name || payload.email?.split("@")[0] || "Admin",
+            role: (payload.app_role || payload.role) === "super_admin" ? "super_admin" : "merchant",
+            merchant_id: payload.merchant_id || null,
+          };
+          localStorage.setItem("admin_user", JSON.stringify(parsedUser));
+        }
+      } catch { /* ignore */ }
+    }
+
+    if (parsedUser) setUser(parsedUser);
+    getDashboardStats(parsedUser)
+      .then((data) => setStats(data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/axios';
+import * as orderService from '../services/orderService';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
@@ -27,9 +27,12 @@ export default function Checkout() {
 
   useEffect(() => {
     if (user) {
+      const fullName = user.first_name
+        ? `${user.first_name}${user.last_name ? ' ' + user.last_name : ''}`
+        : user.username || '';
       setFormData(prev => ({
         ...prev,
-        name: user.name || user.username || '',
+        name: fullName,
         phone: user.phone || '',
         address: user.address || '',
       }));
@@ -69,8 +72,9 @@ export default function Checkout() {
         byMerchant[mid].push(item);
       });
 
+      const token = localStorage.getItem('token');
       const orderPromises = Object.keys(byMerchant).map(merchantId =>
-        api.post('/orders/', {
+        orderService.placeOrder(token, {
           merchant_id: parseInt(merchantId),
           delivery_address: formData.address,
           delivery_province: formData.province,
@@ -83,7 +87,7 @@ export default function Checkout() {
 
       const results = await Promise.all(orderPromises);
       await fetchCart();
-      const firstOrderId = results[0]?.data?.data?.order_id;
+      const firstOrderId = results[0]?.data?.order_id;
 
       if (paymentMethod === 'khqr' && firstOrderId) {
         setOrderId(firstOrderId);
@@ -102,9 +106,10 @@ export default function Checkout() {
   const fetchKhqrCode = async (oid) => {
     setLoadingKhqr(true);
     try {
-      const res = await api.get(`/orders/${oid}/khqr`);
-      setKhqrData(res.data.data);
-      setKhqrTimer(res.data.data.expires_in || 900);
+      const token = localStorage.getItem('token');
+      const res = await orderService.getKhqr(token, oid);
+      setKhqrData(res.data);
+      setKhqrTimer(res.data.expires_in || 900);
     } catch {
       setOrderError('Failed to generate KHQR code. Please contact support.');
     } finally {
@@ -115,14 +120,15 @@ export default function Checkout() {
   const handleConfirmPayment = async () => {
     if (!orderId) return;
     try {
-      await api.post(`/orders/${orderId}/confirm-payment`);
+      const token = localStorage.getItem('token');
+      await orderService.confirmPayment(token, orderId);
       navigate(`/order/${orderId}?placed=true`, { replace: true });
     } catch {
       alert('Payment confirmation failed. Please contact support if you have already paid.');
     }
   };
 
-  if (!user || items.length === 0) {
+  if (!user || (items.length === 0 && step < 4)) {
     return (
       <div className="page-container">
         <PageHeader title="Checkout" />

@@ -6,7 +6,7 @@ Sends formatted order receipts to customers via Telegram when orders are deliver
 import logging
 from datetime import datetime
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from app.database import execute_query
+from bot.supabase_helpers import sb_get, sb_get_one, sb_patch
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,48 +16,28 @@ async def send_receipt_to_customer(bot, order_id: int):
     """
     Fetch order details and send formatted receipt via Telegram.
     Called after order status changes to 'delivered'.
-
-    Args:
-        bot: Telegram bot instance
-        order_id: Order ID to send receipt for
     """
     try:
-        # Fetch order with user and merchant details
-        order_query = """
-            SELECT
-                o.id, o.order_code, o.subtotal, o.discount_amount, o.delivery_fee, o.total,
-                o.payment_method, o.payment_status,
-                o.delivery_address, o.delivery_name, o.delivery_phone, o.delivery_province,
-                o.created_at, o.updated_at,
-                u.telegram_id, u.name as customer_name, u.username as customer_username,
-                m.name as merchant_name, m.phone as merchant_phone
-            FROM orders o
-            JOIN users u ON o.user_id = u.id
-            JOIN merchants m ON o.merchant_id = m.id
-            WHERE o.id = %s
-        """
-
-        order = execute_query(order_query, (order_id,), fetch_one=True)
-
+        order = sb_get_one(
+            "orders",
+            f"select=id,order_code,subtotal,discount_amount,delivery_fee,total,"
+            f"payment_method,payment_status,delivery_address,delivery_name,delivery_phone,"
+            f"delivery_province,created_at,updated_at,user_id,merchant_id"
+            f"&id=eq.{order_id}"
+        )
         if not order:
             logger.error(f"Order {order_id} not found for receipt")
             return False
 
-        if not order['telegram_id']:
+        user = sb_get_one("users", f"select=telegram_id,first_name,last_name,username&id=eq.{order['user_id']}")
+        if not user or not user.get("telegram_id"):
             logger.warning(f"Order {order_id} has no Telegram ID for customer")
             return False
 
-        # Fetch order items
-        items_query = """
-            SELECT
-                oi.quantity, oi.unit_price, oi.subtotal,
-                oi.product_name, oi.selected_variants
-            FROM order_items oi
-            WHERE oi.order_id = %s
-            ORDER BY oi.id
-        """
+        merchant = sb_get_one("merchants", f"select=name,phone&id=eq.{order['merchant_id']}")
+        merchant_name = merchant["name"] if merchant else "Unknown"
 
-        items = execute_query(items_query, (order_id,), fetch_all=True) or []
+        items = sb_get("order_items", f"select=quantity,unit_price,subtotal,product_name,selected_variants&order_id=eq.{order_id}&order=id")
 
         if not items:
             logger.warning(f"Order {order_id} has no items")
@@ -67,110 +47,84 @@ async def send_receipt_to_customer(bot, order_id: int):
         items_text = []
         for item in items:
             variant_text = ""
-            if item['selected_variants']:
+            if item.get("selected_variants"):
                 try:
                     import json
-                    variants = json.loads(item['selected_variants']) if isinstance(item['selected_variants'], str) else item['selected_variants']
+                    variants = json.loads(item["selected_variants"]) if isinstance(item["selected_variants"], str) else item["selected_variants"]
                     if variants:
                         variant_text = f" ({', '.join([f'{k}: {v}' for k, v in variants.items()])})"
-                except:
+                except Exception:
                     pass
 
             items_text.append(
-                f"  • {item['product_name']}{variant_text}\n"
+                f"  - {item['product_name']}{variant_text}\n"
                 f"    {item['quantity']} x ${float(item['unit_price']):.2f} = ${float(item['subtotal']):.2f}"
             )
 
         items_section = "\n".join(items_text)
 
         # Format dates
-        order_date = order['created_at']
+        order_date = order["created_at"]
         if isinstance(order_date, str):
-            order_date = datetime.fromisoformat(order_date.replace('Z', '+00:00'))
-        date_str = order_date.strftime('%b %d, %Y at %I:%M %p')
+            order_date = datetime.fromisoformat(order_date.replace("Z", "+00:00"))
+        date_str = order_date.strftime("%b %d, %Y at %I:%M %p") if isinstance(order_date, datetime) else str(order_date)
 
-        # Build receipt message
+        customer_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip() or user.get("username", "Customer")
+
         receipt = f"""
-🧾 **DELIVERY RECEIPT / វិក្កយបត្រ**
-━━━━━━━━━━━━━━━━━━━━━
+**DELIVERY RECEIPT**
 
-📋 **Order:** {order['order_code'] or f"#{order['id']:04d}"}
-🏪 **Shop:** {order['merchant_name']}
-📅 **Date:** {date_str}
+**Order:** {order.get('order_code') or f"#{order['id']:04d}"}
+**Shop:** {merchant_name}
+**Date:** {date_str}
 
 **Items:**
 {items_section}
 
-━━━━━━━━━━━━━━━━━━━━━
 **Order Summary:**
   Subtotal: ${float(order['subtotal']):.2f}
 """
 
-        if order['discount_amount'] and float(order['discount_amount']) > 0:
+        if order.get("discount_amount") and float(order["discount_amount"]) > 0:
             receipt += f"  Discount: -${float(order['discount_amount']):.2f}\n"
 
-        if order['delivery_fee'] and float(order['delivery_fee']) > 0:
+        if order.get("delivery_fee") and float(order["delivery_fee"]) > 0:
             receipt += f"  Delivery: ${float(order['delivery_fee']):.2f}\n"
         else:
             receipt += "  Delivery: FREE\n"
 
         receipt += f"""
-━━━━━━━━━━━━━━━━━━━━━
-💰 **TOTAL: ${float(order['total']):.2f}**
-💳 Payment: {order['payment_method'].upper()}
-📦 Status: {order['payment_status'].upper()}
+**TOTAL: ${float(order['total']):.2f}**
+Payment: {order['payment_method'].upper()}
+Status: {order['payment_status'].upper()}
 
 **Delivered to:**
-👤 {order['delivery_name']}
-📞 {order['delivery_phone']}
-📍 {order['delivery_address']}
-{f"   {order['delivery_province']}" if order.get('delivery_province') else ""}
+{order.get('delivery_name', customer_name)}
+{order.get('delivery_phone', 'N/A')}
+{order.get('delivery_address', 'N/A')}
+{order.get('delivery_province', '')}
 
-━━━━━━━━━━━━━━━━━━━━━
-✅ **Order Delivered Successfully!**
+**Order Delivered Successfully!**
 
-Thank you for shopping with us! 🛍️
-We hope you enjoyed your purchase.
+Thank you for shopping with us!
 """
 
-        # Create inline keyboard with review button
         keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "⭐ Write a Review",
-                    url=f"{settings.WEB_APP_URL}/order/{order['id']}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "🛍️ Shop Again",
-                    url=f"{settings.WEB_APP_URL}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "💬 Contact Support",
-                    callback_data="support"
-                )
-            ]
+            [InlineKeyboardButton("Write a Review", url=f"{settings.WEB_APP_URL}/order/{order['id']}")],
+            [InlineKeyboardButton("Shop Again", url=f"{settings.WEB_APP_URL}")],
+            [InlineKeyboardButton("Contact Support", callback_data="support")],
         ])
 
-        # Send receipt to customer
         await bot.send_message(
-            chat_id=order['telegram_id'],
+            chat_id=user["telegram_id"],
             text=receipt,
-            parse_mode='Markdown',
-            reply_markup=keyboard
+            parse_mode="Markdown",
+            reply_markup=keyboard,
         )
 
-        logger.info(f"Receipt sent successfully for order {order_id} to user {order['telegram_id']}")
+        logger.info(f"Receipt sent successfully for order {order_id} to user {user['telegram_id']}")
 
-        # Update order to mark receipt as sent
-        execute_query(
-            "UPDATE orders SET receipt_sent_at = NOW() WHERE id = %s",
-            (order_id,),
-            commit=True
-        )
+        sb_patch("orders", f"id=eq.{order_id}", {"receipt_sent_at": datetime.utcnow().isoformat()})
 
         return True
 
@@ -180,32 +134,19 @@ We hope you enjoyed your purchase.
 
 
 async def send_receipt_for_multiple_orders(bot, order_ids: list):
-    """
-    Send receipts for multiple orders (batch processing)
-
-    Args:
-        bot: Telegram bot instance
-        order_ids: List of order IDs
-
-    Returns:
-        dict: Success/failure counts
-    """
-    results = {
-        'success': 0,
-        'failed': 0,
-        'errors': []
-    }
+    """Send receipts for multiple orders (batch processing)."""
+    results = {"success": 0, "failed": 0, "errors": []}
 
     for order_id in order_ids:
         try:
             success = await send_receipt_to_customer(bot, order_id)
             if success:
-                results['success'] += 1
+                results["success"] += 1
             else:
-                results['failed'] += 1
-                results['errors'].append(f"Order {order_id}: Receipt sending failed")
+                results["failed"] += 1
+                results["errors"].append(f"Order {order_id}: Receipt sending failed")
         except Exception as e:
-            results['failed'] += 1
-            results['errors'].append(f"Order {order_id}: {str(e)}")
+            results["failed"] += 1
+            results["errors"].append(f"Order {order_id}: {str(e)}")
 
     return results

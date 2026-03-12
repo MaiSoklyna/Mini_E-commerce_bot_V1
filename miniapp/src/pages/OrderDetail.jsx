@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import api from '../api/axios';
+import * as orderService from '../services/orderService';
+import * as reviewService from '../services/reviewService';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import BottomSheet from '../components/BottomSheet';
@@ -30,8 +31,8 @@ export default function OrderDetail() {
   const [timelineVisible, setTimelineVisible] = useState([]);
 
   useEffect(() => {
-    api.get(`/orders/${id}`)
-      .then(res => { setOrder(res.data.data); setLoading(false); })
+    orderService.getOrder(id)
+      .then(data => { setOrder(data); setLoading(false); })
       .catch(() => navigate(-1));
   }, [id, navigate]);
 
@@ -54,7 +55,8 @@ export default function OrderDetail() {
     if (!confirm('Are you sure you want to cancel this order?')) return;
     setCancelling(true);
     try {
-      await api.post(`/orders/${id}/cancel`);
+      const token = localStorage.getItem('token');
+      await orderService.cancelOrder(token, id);
       setOrder(prev => ({ ...prev, status: 'cancelled' }));
     } catch (err) {
       alert(err.response?.data?.detail || 'Cannot cancel order');
@@ -68,7 +70,8 @@ export default function OrderDetail() {
     setSubmittingReview(true);
     try {
       if (order.items?.length > 0) {
-        await api.post('/reviews/', {
+        const token = localStorage.getItem('token');
+        await reviewService.createReview(token, {
           product_id: order.items[0].product_id,
           order_id: order.id,
           rating: reviewData.rating,

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import api from '../api/axios'
+import * as cartService from '../services/cartService'
 import { useAuth } from './AuthContext'
 
 const CartContext = createContext(null)
@@ -15,8 +15,7 @@ export function CartProvider({ children }) {
     if (!user) return
     try {
       setLoading(true)
-      const res = await api.get('/cart')
-      const cart = res.data.data || {}
+      const cart = await cartService.getCart()
       setItems(cart.items || [])
       setCount(cart.item_count || 0)
       setTotal(parseFloat(cart.subtotal) || 0)
@@ -27,21 +26,26 @@ export function CartProvider({ children }) {
   useEffect(() => { if (user) fetchCart() }, [user, fetchCart])
 
   async function addToCart(productId, quantity = 1) {
-    try { await api.post('/cart/items', { product_id: productId, quantity }); await fetchCart(); return true }
+    try {
+      const token = localStorage.getItem('token')
+      await cartService.addToCart(token, { product_id: productId, quantity })
+      await fetchCart()
+      return true
+    }
     catch { return false }
   }
-  async function updateQuantity(cartId, quantity) {
+  async function updateQuantity(cartItemId, quantity) {
     try {
-      if (quantity <= 0) { await api.delete(`/cart/items/${cartId}`) }
-      else { await api.patch(`/cart/items/${cartId}`, { quantity }) }
+      if (quantity <= 0) { await cartService.removeCartItem(cartItemId) }
+      else { await cartService.updateCartItem(cartItemId, quantity) }
       await fetchCart()
     } catch {}
   }
-  async function removeItem(cartId) {
-    try { await api.delete(`/cart/items/${cartId}`); await fetchCart() } catch {}
+  async function removeItem(cartItemId) {
+    try { await cartService.removeCartItem(cartItemId); await fetchCart() } catch {}
   }
   async function clearCart() {
-    try { await api.delete('/cart'); setItems([]); setCount(0); setTotal(0) } catch {}
+    try { await cartService.clearCart(); setItems([]); setCount(0); setTotal(0) } catch {}
   }
 
   return (

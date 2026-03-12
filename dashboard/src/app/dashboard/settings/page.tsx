@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import api from "@/lib/api";
+import * as authService from "@/services/authService";
+import * as settingsService from "@/services/settingsService";
 import { MdSmartToy, MdInfo } from "react-icons/md";
 
 export default function SettingsPage() {
@@ -28,36 +29,39 @@ export default function SettingsPage() {
     setTimeout(() => setMsg({ type: "", text: "" }), 4000);
   };
 
-  const updateProfile = async () => {
+  const updateProfileFn = async () => {
     setSaving("profile"); setMsg({ type: "", text: "" });
     try {
-      await api.put("/admin/auth/profile", profile);
+      const token = localStorage.getItem("admin_token") || "";
+      await authService.updateProfile(token, profile);
       const updated = { ...user, ...profile };
       localStorage.setItem("admin_user", JSON.stringify(updated));
       setUser(updated);
       flash("success", "Profile updated successfully");
-    } catch (e: any) { flash("error", e.response?.data?.detail || "Update failed"); }
+    } catch (e: any) { flash("error", e.response?.data?.detail || e.message || "Update failed"); }
     setSaving("");
   };
 
-  const changePassword = async () => {
+  const changePasswordFn = async () => {
     if (passwords.new_password !== passwords.confirm) return flash("error", "Passwords don't match");
     if (passwords.new_password.length < 6) return flash("error", "Minimum 6 characters required");
     setSaving("password"); setMsg({ type: "", text: "" });
     try {
-      await api.put("/admin/auth/password", { current_password: passwords.current_password, new_password: passwords.new_password });
+      const token = localStorage.getItem("admin_token") || "";
+      await authService.changePassword(token, { current_password: passwords.current_password, new_password: passwords.new_password });
       setPasswords({ current_password: "", new_password: "", confirm: "" });
       flash("success", "Password changed successfully");
-    } catch (e: any) { flash("error", e.response?.data?.detail || "Password change failed"); }
+    } catch (e: any) { flash("error", e.response?.data?.detail || e.message || "Password change failed"); }
     setSaving("");
   };
 
   const updateBot = async () => {
     setSaving("bot"); setMsg({ type: "", text: "" });
     try {
-      await api.put("/admin/settings/bot", bot);
+      if (!user?.merchant_id) throw new Error("No merchant ID");
+      await settingsService.updateBotSettings(user.merchant_id, bot);
       flash("success", "Bot settings saved");
-    } catch (e: any) { flash("error", e.response?.data?.detail || "Failed to save bot settings"); }
+    } catch (e: any) { flash("error", e.response?.data?.detail || e.message || "Failed to save bot settings"); }
     setSaving("");
   };
 
@@ -91,7 +95,7 @@ export default function SettingsPage() {
             <div><label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Email</label>
               <input type="email" className="input" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })} /></div>
           </div>
-          <button onClick={updateProfile} disabled={saving === "profile"} className="btn btn-primary mt-4" style={{ fontSize: 12 }}>
+          <button onClick={updateProfileFn} disabled={saving === "profile"} className="btn btn-primary mt-4" style={{ fontSize: 12 }}>
             {saving === "profile" ? "Saving..." : "Update Profile"}
           </button>
         </div>
@@ -107,7 +111,7 @@ export default function SettingsPage() {
             <div><label className="text-xs font-medium" style={{ color: "var(--text-secondary)" }}>Confirm New Password</label>
               <input type="password" className="input" value={passwords.confirm} onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })} /></div>
           </div>
-          <button onClick={changePassword} disabled={saving === "password"} className="btn btn-primary mt-4" style={{ fontSize: 12 }}>
+          <button onClick={changePasswordFn} disabled={saving === "password"} className="btn btn-primary mt-4" style={{ fontSize: 12 }}>
             {saving === "password" ? "Changing..." : "Change Password"}
           </button>
         </div>

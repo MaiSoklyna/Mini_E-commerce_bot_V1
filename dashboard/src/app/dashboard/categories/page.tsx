@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import api from "@/lib/api";
+import * as categoryService from "@/services/categoryService";
+import * as merchantService from "@/services/merchantService";
 import { Category } from "@/types";
 import { MdFolder, MdPublic, MdStore, MdEdit, MdDelete } from "react-icons/md";
 
@@ -29,18 +30,18 @@ export default function CategoriesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
   const [toast, setToast] = useState<ToastState>({ show: false, message: "", type: "success" });
 
-  const user = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("admin_user") || "{}") : {};
-  const isSuper = user.role === "super_admin";
+  const user = typeof window !== "undefined" ? (JSON.parse(localStorage.getItem("admin_user") || "{}") ?? {}) : {};
+  const isSuper = user?.role === "super_admin";
 
   const load = async () => {
     setLoading(true);
     try {
-      const [cRes, mRes] = await Promise.all([
-        api.get("/admin/categories"),
-        isSuper ? api.get("/admin/merchants", { params: { limit: 100 } }) : Promise.resolve({ data: { data: [] } }),
+      const [cats, mercs] = await Promise.all([
+        categoryService.listCategories(),
+        isSuper ? merchantService.listMerchants({ limit: 100 }) : Promise.resolve([]),
       ]);
-      setCategories(cRes.data.data || []);
-      setMerchants(mRes.data.data || []);
+      setCategories(cats || []);
+      setMerchants(mercs || []);
     } catch (e) {
       console.error(e);
       showToast("Failed to load categories", "error");
@@ -95,10 +96,10 @@ export default function CategoriesPage() {
       };
 
       if (editId) {
-        await api.put(`/admin/categories/${editId}`, payload);
+        await categoryService.updateCategory(editId, payload);
         showToast("Category updated successfully", "success");
       } else {
-        await api.post("/admin/categories", payload);
+        await categoryService.createCategory(payload);
         showToast("Category created successfully", "success");
       }
 
@@ -119,7 +120,7 @@ export default function CategoriesPage() {
     if (!deleteTarget) return;
 
     try {
-      await api.delete(`/admin/categories/${deleteTarget.id}`);
+      await categoryService.deleteCategory(deleteTarget.id);
       showToast(`Category "${deleteTarget.name}" deleted successfully`, "success");
       setDeleteModal(false);
       setDeleteTarget(null);

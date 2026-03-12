@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import api from '../api/axios'
+import * as merchantService from '../services/merchantService'
+import * as categoryService from '../services/categoryService'
+import * as productService from '../services/productService'
 import ProductCard from '../components/ProductCard'
 import HeroSlider from '../components/HeroSlider'
 import SectionHeader from '../components/SectionHeader'
@@ -174,13 +176,15 @@ export default function Home() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/merchants'), api.get('/categories'), api.get('/products?limit=10'),
-      api.get('/merchants/promos/active'),
+      merchantService.listMerchants(),
+      categoryService.listCategories(),
+      productService.listProducts({ limit: 10 }),
+      merchantService.listActivePromos(),
     ]).then(([m, c, p, pr]) => {
-      setMerchants(m.data.data || [])
-      setCategories(c.data.data || [])
-      setProducts(p.data.data || [])
-      setPromos(pr.data.data || [])
+      setMerchants(m)
+      setCategories(c)
+      setProducts(p)
+      setPromos(pr)
     }).catch(console.error).finally(() => setLoading(false))
   }, [])
 

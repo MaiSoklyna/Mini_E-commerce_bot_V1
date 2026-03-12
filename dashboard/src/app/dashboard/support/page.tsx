@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import api from "@/lib/api";
+import * as supportService from "@/services/supportService";
 import { SupportTicket, TicketMessage } from "@/types";
 import { MdChat, MdClose, MdSend, MdRefresh } from "react-icons/md";
 
@@ -39,11 +39,11 @@ export default function SupportTicketsPage() {
   const loadTickets = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/admin/support/tickets", {
-        params: { limit: 50, status: filterStatus || undefined, search: search || undefined },
+      const res = await supportService.listTickets({
+        limit: 50, status: filterStatus || undefined, search: search || undefined,
       });
-      setTickets(res.data.data || []);
-      setTotal(res.data.meta?.total || 0);
+      setTickets(res.data || []);
+      setTotal(res.meta?.total || 0);
     } catch (e) {
       console.error(e);
     }
@@ -53,9 +53,9 @@ export default function SupportTicketsPage() {
   const loadMessages = async (ticketId: number) => {
     setMsgLoading(true);
     try {
-      const res = await api.get(`/admin/support/tickets/${ticketId}`);
-      setTicketDetail(res.data.data);
-      setMessages(res.data.data.messages || []);
+      const data = await supportService.getTicket(ticketId);
+      setTicketDetail(data);
+      setMessages(data.messages || []);
     } catch (e) {
       console.error(e);
     }
@@ -78,7 +78,7 @@ export default function SupportTicketsPage() {
     if (!reply.trim() || !selected) return;
     setSending(true);
     try {
-      await api.post(`/admin/support/tickets/${selected}/reply`, { message: reply });
+      await supportService.replyToTicket(selected, reply);
       setReply("");
       await loadMessages(selected);
       loadTickets();
@@ -91,7 +91,7 @@ export default function SupportTicketsPage() {
   const closeTicket = async () => {
     if (!selected || !confirm("Close this ticket?")) return;
     try {
-      await api.patch(`/admin/support/tickets/${selected}/close`);
+      await supportService.closeTicket(selected);
       await loadTickets();
       await loadMessages(selected);
     } catch (e: any) {

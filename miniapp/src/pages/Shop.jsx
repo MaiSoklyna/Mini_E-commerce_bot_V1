@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import api from '../api/axios'
+import * as merchantService from '../services/merchantService'
 import ProductCard from '../components/ProductCard'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -14,8 +14,8 @@ export default function Shop() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([api.get(`/merchants/${id}`), api.get(`/merchants/${id}/products`)])
-      .then(([m, p]) => { setMerchant(m.data.data); setProducts(p.data.data || []) })
+    Promise.all([merchantService.getMerchant(id), merchantService.getMerchantProducts(id)])
+      .then(([m, p]) => { setMerchant(m); setProducts(p) })
       .catch(() => navigate(-1)).finally(() => setLoading(false))
   }, [id])
 

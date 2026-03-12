@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import api from '../api/axios';
+import * as orderService from '../services/orderService';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
@@ -25,8 +25,8 @@ export default function Orders() {
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
-    api.get('/orders/')
-      .then(res => setOrders(res.data.data || []))
+    orderService.listOrders()
+      .then(data => setOrders(data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [user]);

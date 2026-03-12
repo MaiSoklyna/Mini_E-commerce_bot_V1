@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import api from "@/lib/api";
+import * as promoService from "@/services/promoService";
+import * as merchantService from "@/services/merchantService";
 import { PromoCode } from "@/types";
 import { MdLocalOffer, MdEdit, MdDelete, MdAutorenew } from "react-icons/md";
 
@@ -32,18 +33,18 @@ export default function PromotionsPage() {
   const [deleteTarget, setDeleteTarget] = useState<PromoCode | null>(null);
   const [toast, setToast] = useState<ToastState>({ show: false, message: "", type: "success" });
 
-  const user = typeof window !== "undefined" ? JSON.parse(localStorage.getItem("admin_user") || "{}") : {};
-  const isSuper = user.role === "super_admin";
+  const user = typeof window !== "undefined" ? (JSON.parse(localStorage.getItem("admin_user") || "{}") ?? {}) : {};
+  const isSuper = user?.role === "super_admin";
 
   const load = async () => {
     setLoading(true);
     try {
-      const [pRes, mRes] = await Promise.all([
-        api.get("/admin/promos"),
-        isSuper ? api.get("/admin/merchants", { params: { limit: 100 } }) : Promise.resolve({ data: { data: [] } }),
+      const [promosData, mercsData] = await Promise.all([
+        promoService.listPromos(),
+        isSuper ? merchantService.listMerchants({ limit: 100 }) : Promise.resolve([]),
       ]);
-      setPromos(pRes.data.data || []);
-      setMerchants(mRes.data.data || []);
+      setPromos(promosData || []);
+      setMerchants(mercsData || []);
     } catch (e) {
       console.error(e);
       showToast("Failed to load promo codes", "error");
@@ -120,10 +121,10 @@ export default function PromotionsPage() {
       };
 
       if (editId) {
-        await api.put(`/admin/promos/${editId}`, payload);
+        await promoService.updatePromo(editId, payload);
         showToast("Promo code updated successfully", "success");
       } else {
-        await api.post("/admin/promos", payload);
+        await promoService.createPromo(payload);
         showToast("Promo code created successfully", "success");
       }
 
@@ -137,7 +138,7 @@ export default function PromotionsPage() {
 
   const toggleActive = async (promo: PromoCode) => {
     try {
-      await api.patch(`/admin/promos/${promo.id}`, { is_active: !promo.is_active });
+      await promoService.patchPromo(promo.id, { is_active: !promo.is_active });
       showToast(`Promo code ${!promo.is_active ? "activated" : "deactivated"}`, "success");
       load();
     } catch (e: any) {
@@ -154,7 +155,7 @@ export default function PromotionsPage() {
     if (!deleteTarget) return;
 
     try {
-      await api.delete(`/admin/promos/${deleteTarget.id}`);
+      await promoService.deletePromo(deleteTarget.id);
       showToast(`Promo code "${deleteTarget.code}" deleted successfully`, "success");
       setDeleteModal(false);
       setDeleteTarget(null);

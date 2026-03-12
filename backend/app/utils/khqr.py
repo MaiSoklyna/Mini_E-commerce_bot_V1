@@ -9,16 +9,15 @@ import qrcode
 import base64
 from io import BytesIO
 from typing import Optional
-from app.database import execute_query
+from bot.supabase_helpers import sb_get_one
 
 
 def get_merchant_name(merchant_id: int) -> str:
-    """Fetch merchant name from database"""
+    """Fetch merchant name from Supabase"""
     if not merchant_id:
         return "Favourite of Shop"
 
-    sql = "SELECT name FROM merchants WHERE id = %s"
-    result = execute_query(sql, (merchant_id,), fetch_one=True)
+    result = sb_get_one("merchants", f"select=name&id=eq.{merchant_id}")
     return result['name'] if result else "Unknown Merchant"
 
 
@@ -31,12 +30,7 @@ def get_merchant_account_info(merchant_id: int) -> dict:
             'bakong_account': None
         }
 
-    sql = """
-        SELECT name, bakong_account, phone
-        FROM merchants
-        WHERE id = %s
-    """
-    result = execute_query(sql, (merchant_id,), fetch_one=True)
+    result = sb_get_one("merchants", f"select=name,bakong_account,phone&id=eq.{merchant_id}")
 
     if result:
         return {

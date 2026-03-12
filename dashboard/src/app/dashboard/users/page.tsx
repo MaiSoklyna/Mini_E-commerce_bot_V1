@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import api from "@/lib/api";
+import * as userService from "@/services/userService";
 import { User, Pagination } from "@/types";
 
 export default function UsersPage() {
@@ -13,9 +13,9 @@ export default function UsersPage() {
   const load = async (page = 1) => {
     setLoading(true);
     try {
-      const res = await api.get("/admin/users", { params: { page, limit: 20, search } });
-      setUsers(res.data.data || []);
-      setPagination(res.data.meta || { page, limit: 20, total: 0, total_pages: 0 });
+      const res = await userService.listUsers({ page, limit: 20, search });
+      setUsers(res.data || []);
+      setPagination(res.meta || { page, limit: 20, total: 0, total_pages: 0 });
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -25,13 +25,13 @@ export default function UsersPage() {
 
   const openDetail = async (id: number) => {
     try {
-      const res = await api.get(`/admin/users/${id}`);
-      setDetail(res.data.data);
+      const data = await userService.getUser(id);
+      setDetail(data);
     } catch (e) { console.error(e); }
   };
 
   const toggleStatus = async (id: number, is_active: boolean) => {
-    await api.patch(`/admin/users/${id}/status`, { is_active });
+    await userService.toggleUserStatus(id, is_active);
     load(pagination.page);
   };
 

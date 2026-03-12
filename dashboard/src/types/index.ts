@@ -28,6 +28,7 @@ export interface Merchant {
   instagram?: string;
   product_count?: number;
   order_count?: number;
+  total_revenue?: number;
   created_at?: string;
 }
 
@@ -140,12 +141,14 @@ export interface User {
 export interface PromoCode {
   id: number;
   merchant_id: number;
+  merchant_name?: string;
   code: string;
   type: "percent" | "flat";
   value: number;
   min_order: number;
   max_uses?: number | null;
   used_count: number;
+  start_date?: string | null;
   expires_at?: string | null;
   is_active: boolean;
   created_at?: string;

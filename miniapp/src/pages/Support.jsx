@@ -3,7 +3,7 @@ import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import EmptyState from '../components/EmptyState';
-import api from '../api/axios';
+import * as supportService from '../services/supportService';
 
 const FAQ_ITEMS = [
   { question: 'How do I track my order?', answer: 'Go to "My Orders" from the bottom navigation, then select your order to view its current status.' },
@@ -53,8 +53,8 @@ function TicketList({ user, navigate, loginPending, startLoginSession }) {
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
-    api.get('/support/tickets')
-      .then(res => setTickets(res.data.data || []))
+    supportService.listTickets()
+      .then(data => setTickets(data))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [user]);
@@ -198,16 +198,16 @@ function MerchantSupport({ merchantId, merchantName, user, loginPending, startLo
     setLoading(true);
     try {
       if (ticketIdFromState) {
-        const res = await api.get(`/support/tickets/${ticketIdFromState}`);
-        setTicket(res.data.data);
-        setMessages(res.data.data.messages || []);
+        const data = await supportService.getTicket(ticketIdFromState);
+        setTicket(data);
+        setMessages(data.messages || []);
       } else {
-        const res = await api.get('/support/tickets');
-        const existing = (res.data.data || []).find(t => String(t.merchant_id) === String(merchantId) && t.status !== 'closed');
+        const tickets = await supportService.listTickets();
+        const existing = tickets.find(t => String(t.merchant_id) === String(merchantId) && t.status !== 'closed');
         if (existing) {
-          const detail = await api.get(`/support/tickets/${existing.id}`);
-          setTicket(detail.data.data);
-          setMessages(detail.data.data.messages || []);
+          const data = await supportService.getTicket(existing.id);
+          setTicket(data);
+          setMessages(data.messages || []);
         } else {
           setShowForm(true);
         }
@@ -223,10 +223,10 @@ function MerchantSupport({ merchantId, merchantName, user, loginPending, startLo
     if (!subject || !message.trim()) return;
     setSending(true);
     try {
-      const res = await api.post('/support/tickets', { merchant_id: parseInt(merchantId), subject, message });
-      const detail = await api.get(`/support/tickets/${res.data.data.id}`);
-      setTicket(detail.data.data);
-      setMessages(detail.data.data.messages || []);
+      const ticket = await supportService.createTicket({ user_id: user.id, merchant_id: parseInt(merchantId), subject, message });
+      const data = await supportService.getTicket(ticket.id);
+      setTicket(data);
+      setMessages(data.messages || []);
       setShowForm(false);
       setSubject('');
       setMessage('');
@@ -240,11 +240,11 @@ function MerchantSupport({ merchantId, merchantName, user, loginPending, startLo
     if (!replyText.trim() || !ticket) return;
     setSending(true);
     try {
-      await api.post(`/support/tickets/${ticket.id}/messages`, { message: replyText });
+      await supportService.sendMessage(ticket.id, user.id, replyText);
       setReplyText('');
-      const res = await api.get(`/support/tickets/${ticket.id}`);
-      setTicket(res.data.data);
-      setMessages(res.data.data.messages || []);
+      const data = await supportService.getTicket(ticket.id);
+      setTicket(data);
+      setMessages(data.messages || []);
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to send message');
     }

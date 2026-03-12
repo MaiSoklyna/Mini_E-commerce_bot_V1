@@ -1,9 +1,9 @@
 "use client";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import { User } from "@/types";
+import { AdminUser } from "@/types";
 
-interface Props { user: User; onLogout: () => void; open: boolean; onClose: () => void; }
+interface Props { user: AdminUser; onLogout: () => void; open: boolean; onClose: () => void; }
 
 const menu = [
   { path: "/dashboard", icon: "◻", label: "Dashboard", exact: true },
@@ -29,7 +29,7 @@ export default function Sidebar({ user, onLogout, open, onClose }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   
-  const isSuper = user?.role === "super_admin" || user?.role === "admin";
+  const isSuper = user?.role === "super_admin";
   const [theme, setTheme] = useState("light");
 
   useEffect(() => {
@@ -102,13 +102,13 @@ export default function Sidebar({ user, onLogout, open, onClose }: Props) {
           <div className="flex items-center gap-2.5 px-2 mb-2">
             <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold"
                  style={{ background: "var(--accent)", color: "var(--bg)" }}>
-              {user?.first_name?.[0] || "A"}
+              {user?.name?.[0] || "A"}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[12px] font-semibold truncate" style={{ color: "var(--text)" }}>
-                {user?.first_name} {user?.last_name}
+                {user?.name}
               </p>
-              <p className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>@{user?.username}</p>
+              <p className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>{user?.email}</p>
             </div>
           </div>
 

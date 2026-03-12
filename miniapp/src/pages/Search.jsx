@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/axios';
+import * as productService from '../services/productService';
 import PageHeader from '../components/PageHeader';
 import ProductCard from '../components/ProductCard';
 import EmptyState from '../components/EmptyState';
@@ -51,16 +51,16 @@ export default function Search() {
 
   useEffect(() => {
     if (hasSearched && results.length === 0) {
-      api.get('/products?limit=4')
-        .then(res => setSuggestedProducts(res.data.data || []))
+      productService.listProducts({ limit: 4 })
+        .then(data => setSuggestedProducts(data))
         .catch(() => setSuggestedProducts([]));
     }
   }, [hasSearched, results.length]);
 
   const performSearch = async (searchQuery) => {
     try {
-      const res = await api.get(`/products?search=${encodeURIComponent(searchQuery)}&limit=20`);
-      setResults(res.data.data || []);
+      const data = await productService.listProducts({ search: searchQuery, limit: 20 });
+      setResults(data);
       setHasSearched(true);
       saveRecentSearch(searchQuery);
     } catch (err) {

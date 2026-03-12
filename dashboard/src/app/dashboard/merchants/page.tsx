@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import api from "@/lib/api";
+import * as merchantService from "@/services/merchantService";
+import * as productSvc from "@/services/productService";
+import * as orderSvc from "@/services/orderService";
 import { Merchant } from "@/types";
 import { MdStore, MdEdit, MdCheckCircle, MdBlock, MdRestore, MdClose } from "react-icons/md";
 
@@ -42,10 +44,10 @@ export default function MerchantsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get("/admin/merchants", {
-        params: { limit: 100, search: search || undefined, status: filterStatus || undefined }
+      const data = await merchantService.listMerchants({
+        limit: 100, search: search || undefined, status: filterStatus || undefined
       });
-      setMerchants(res.data.data || []);
+      setMerchants(data || []);
     } catch (e) {
       console.error(e);
       showToast("Failed to load merchants", "error");
@@ -102,10 +104,10 @@ export default function MerchantsPage() {
     setSaving(true);
     try {
       if (editId) {
-        await api.put(`/admin/merchants/${editId}`, form);
+        await merchantService.updateMerchant(editId, form);
         showToast("Merchant updated successfully", "success");
       } else {
-        await api.post("/admin/merchants", form);
+        await merchantService.createMerchant(form);
         showToast("Merchant created successfully", "success");
       }
       setModal(false);
@@ -125,7 +127,7 @@ export default function MerchantsPage() {
     if (!confirm(msg)) return;
 
     try {
-      await api.patch(`/admin/merchants/${id}/status`, { status });
+      await merchantService.changeMerchantStatus(id, status);
       showToast(`Merchant ${status === "active" ? "activated" : status === "suspended" ? "suspended" : "updated"}`, "success");
       load();
       if (selectedMerchant && selectedMerchant.id === id) {
@@ -140,16 +142,16 @@ export default function MerchantsPage() {
     setLoadingDetail(true);
     setDetailDrawer(true);
     try {
-      const [merchantRes, productsRes, ordersRes] = await Promise.all([
-        api.get(`/admin/merchants/${id}`),
-        api.get(`/admin/products?merchant_id=${id}&limit=5`),
-        api.get(`/admin/orders?merchant_id=${id}&limit=5`)
+      const [merchantData, productsRes, ordersRes] = await Promise.all([
+        merchantService.getMerchant(id),
+        productSvc.listProducts({ merchant_id: id, limit: 5 }),
+        orderSvc.listOrders({ merchant_id: id, limit: 5 })
       ]);
 
       setSelectedMerchant({
-        ...(merchantRes.data.data || merchantRes.data),
-        recent_products: productsRes.data.data || [],
-        recent_orders: ordersRes.data.data || []
+        ...merchantData,
+        recent_products: productsRes.data || [],
+        recent_orders: ordersRes.data || []
       });
     } catch (e) {
       console.error(e);
